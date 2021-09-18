@@ -44,12 +44,12 @@ public:
   }
   
   static void IniCoreMIN(TMinuit * mnt){
-    mnt->DefineParameter(0, "lambda", fLambda, 0.01, -1000, 1000);
+    mnt->DefineParameter(0, "lambda", fLambda, 1e-2, -1e6, 1e6);
     mnt->FixParameter(0);  // Fix Lambda
     
     //user previous fit result as initial values
-    mnt->DefineParameter(1, "x", fX, 0.1, -2000, 3000);
-    mnt->DefineParameter(2, "y", fY, 0.1, -2000, 3000);
+    mnt->DefineParameter(1, "x", fX, 1e-2, -1e6, 1e6);
+    mnt->DefineParameter(2, "y", fY, 1e-2, -1e6, 1e6);
   }
 
   static bool IsConstraintGood(){
@@ -59,7 +59,7 @@ public:
   
 
   static void Print(const TString tag){
-    printf("%20s lambda %10.6f X %10.6f Y %10.6f, core %20.6f constraint %20.6f full %20.6f\n", tag.Data(), fLambda, fX, fY, CoreLikelihood(), Constraint(), FullLikelihood());
+    printf("%20s lambda %10.6e X %10.6e Y %10.6e, core %20.6e constraint %20.6e full %20.6e\n", tag.Data(), fLambda, fX, fY, CoreLikelihood(), Constraint(), FullLikelihood());
   }
 
 private:
@@ -103,27 +103,36 @@ void LambdaFCN(int &npars, double *grad, double &value, double *par, int flag)
   UserKF::IniCoreMIN(CoreMIN);
 
   int flagL = CoreMIN->Command("MIGRAD");
-  if(flagL!=0){
-    printf("CoreMIN bad fit! %d ---- run once mroe\n", flagL); //exit(1);
+  UserKF::Print("LambdaFCN after fit");
+  
+  int irun = 1;
+  const int maxnrun = 2;//no need to try many times, fail alwasy if lambda is bad
+  while(flagL!=0){
+    printf("CoreMIN bad fit! %d ---- run once more [%d]\n", flagL, irun++); 
+
     flagL = CoreMIN->Command("MIGRAD");
+    UserKF::Print("LambdaFCN after fit");
+    
+    if(irun>=maxnrun){
+      break;
+    }
   }
   
-  UserKF::SetPar(CoreMIN);
-
-  delete CoreMIN;
-
-  UserKF::Print("LambdaFCN after fit");
-
-  if(flagL!=0){
-    printf("CoreMIN bad fit! %d\n", flagL); //exit(1);
-    value = 1E20;
-  }
-  else{
+  if(flagL==0){
     value = TMath::Abs(UserKF::Constraint());
   }
+  else{
+    printf("CoreMIN giving up now... %d\n", flagL);
+    value = 1E50;//must be large enough wrt possible FullLikelihood when fit fail
+  }
+
+  //already set during CoreMIN
+  //UserKF::SetPar(CoreMIN);//only save fit values to MIN when converge
+
+  delete CoreMIN;
 }
 
-bool DoubleMin()
+bool DoubleMin(const double iniLambda, const double lmin, const double lmax)
 {
   UserKF::Print("DoubleMin before fit");
 
@@ -132,41 +141,51 @@ bool DoubleMin()
 
   LambdaMIN->SetFCN(LambdaFCN);
 
-  //LambdaMIN->DefineParameter(0, "lambda", 0.5, 0.01, 0, 1000);
-  //LambdaMIN->DefineParameter(0, "lambda",   5, 0.01, 0, 100);//works
-  //LambdaMIN->DefineParameter(0, "lambda", 0.5, 0.01, 0, 1000);//works
-  //LambdaMIN->DefineParameter(0, "lambda",   10, 0.01, 0, 100);//works
-  //LambdaMIN->DefineParameter(0, "lambda",   10, 0.01, 0, 1000);//fail
-  //LambdaMIN->DefineParameter(0, "lambda",   5, 0.01, -1, 100);//works
-  //LambdaMIN->DefineParameter(0, "lambda",   5, 0.01, -10, 100);//fail at maxnrun =4, but works with maxnrun >= 9
-  //LambdaMIN->DefineParameter(0, "lambda",   5, 0.01, 0, 100);//works
-  LambdaMIN->DefineParameter(0, "lambda",   5, 0.01, -100, 100);//
+  LambdaMIN->DefineParameter(0, "lambda", iniLambda, 1e-2, lmin, lmax);
   
   int flag = LambdaMIN->Command("MIGRAD");
-  int irun = 1;
-  const int maxnrun=10;//if time permits, the larger the better
+  UserKF::Print("DoubleMin after fit");
   
+  int irun = 1;
+  const int maxnrun=20;//if time permits, the larger the better  
   while(flag!=0 || ! UserKF::IsConstraintGood()){
     printf("LambdaMIN bad fit! %d %e ------- run once more! [%d]\n", flag, UserKF::Constraint(), irun++);
     
     flag = LambdaMIN->Command("MIGRAD");
-
+    UserKF::Print("DoubleMin after fit");
+    
     if(irun>=maxnrun){
-      printf("giving up now... %d %f\n", flag, UserKF::Constraint());
       break;
     }
   }
 
   delete LambdaMIN;
 
-  UserKF::Print("DoubleMin after fit");
-
-  return (flag==0 && UserKF::IsConstraintGood());
+  if(flag==0 && UserKF::IsConstraintGood()){
+    printf("DoubleMin finishes: it works for %f %f %f\n", iniLambda, lmin, lmax);
+    return true;
+  }
+  else{
+    printf("DoubleMin finishes: giving up now... %d %f for  %f %f %f\n", flag, UserKF::Constraint(), iniLambda, lmin, lmax);
+    return false;
+  }
 }
 
 
 int main()
 {
-  DoubleMin();
+  DoubleMin(0.5, 0, 1000);
+  DoubleMin(  5, 0, 100);
+  DoubleMin( 10, 0, 100);
+  DoubleMin( 10, 0, 1000);//fail -> works now after changing the range and step of X and Y to general ones
+  DoubleMin(  5, -1, 100);
+  DoubleMin(5, -10, 100);//fail at maxnrun =4, but works with maxnrun >= 9
+  DoubleMin(5, 0, 100);
+  DoubleMin(5, -100, 100);//works 3 tries
+  DoubleMin(10, -1e6, 1e6);//don't start with 0, no sensitivity, fail eventually: lambda can't be too large
+  DoubleMin(10, -1e3, 1e3);
+  DoubleMin(0, -1e3, 1e3);//fail: lambda can't start as 0
+
+  return 0;
 }
 
