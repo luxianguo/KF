@@ -17,10 +17,16 @@ using namespace std;
 class UserKF{
 
 public:
-  static double GetLambda(){ return fLambda; }
-  static double GetX(){ return fX; }
-  static double GetY(){ return fY; }
   static double GetNpar(){ return fNpar; }
+
+  static void SetPar(const double par[], const int npar=1){
+    fLambda = par[0];
+
+    if(npar==fNpar){
+      fX   = par[1];
+      fY   = par[2];
+    }
+  }
 
   static void SetPar(const TMinuit * mnt){
     double dummy;
@@ -37,14 +43,20 @@ public:
     return CoreLikelihood() + fLambda * Constraint();
   }
   
-  static void SetPar(const double par[], const int npar=1){
-    fLambda = par[0];
-
-    if(npar==fNpar){
-      fX   = par[1];
-      fY   = par[2];
-    }
+  static void IniCoreMIN(TMinuit * mnt){
+    mnt->DefineParameter(0, "lambda", fLambda, 0.01, -1000, 1000);
+    mnt->FixParameter(0);  // Fix Lambda
+    
+    //user previous fit result as initial values
+    mnt->DefineParameter(1, "x", fX, 0.1, -2000, 3000);
+    mnt->DefineParameter(2, "y", fY, 0.1, -2000, 3000);
   }
+
+  static bool IsConstraintGood(){
+    const double eps = 1e-4;
+    return (TMath::Abs(Constraint())<eps);
+  }
+  
 
   static void Print(const TString tag){
     printf("%20s lambda %10.6f X %10.6f Y %10.6f, core %20.6f constraint %20.6f full %20.6f\n", tag.Data(), fLambda, fX, fY, CoreLikelihood(), Constraint(), FullLikelihood());
@@ -71,13 +83,13 @@ void CoreFCN(int &npars, double *grad, double &value, double *par, int flag)
   UserKF::SetPar(par, UserKF::GetNpar());
   
   value = UserKF::FullLikelihood();
-
-  //printf("CoreFCN %f %f %f %f\n", gXfit, gYfit, lambda, value);
 }
-
 
 void LambdaFCN(int &npars, double *grad, double &value, double *par, int flag)
 {
+  //parameters and results are passed in this order
+  //par -> UserKF -> CoreMIN -> UserKF -> value
+  
   UserKF::SetPar(par, 1);//only setting lambda
 
   UserKF::Print("\nLambdaFCN before fit");
@@ -88,11 +100,7 @@ void LambdaFCN(int &npars, double *grad, double &value, double *par, int flag)
   
   CoreMIN->SetFCN(CoreFCN);
 
-  CoreMIN->DefineParameter(0, "lambda", UserKF::GetLambda(), 0.01, -1000, 1000);
-  //user previous fit result as initial values
-  CoreMIN->DefineParameter(1, "gXfit", UserKF::GetX(), 0.1, -2000, 3000);
-  CoreMIN->DefineParameter(2, "gYfit", UserKF::GetY(), 0.1, -2000, 3000);
-  CoreMIN->FixParameter(0);  // Fix Lambda
+  UserKF::IniCoreMIN(CoreMIN);
 
   int flagL = CoreMIN->Command("MIGRAD");
   if(flagL!=0){
@@ -115,7 +123,7 @@ void LambdaFCN(int &npars, double *grad, double &value, double *par, int flag)
   }
 }
 
-void DoubleMin()
+bool DoubleMin()
 {
   UserKF::Print("DoubleMin before fit");
 
@@ -130,34 +138,30 @@ void DoubleMin()
   //LambdaMIN->DefineParameter(0, "lambda",   10, 0.01, 0, 100);//works
   //LambdaMIN->DefineParameter(0, "lambda",   10, 0.01, 0, 1000);//fail
   //LambdaMIN->DefineParameter(0, "lambda",   5, 0.01, -1, 100);//works
-  //LambdaMIN->DefineParameter(0, "lambda",   5, 0.01, -10, 100);//fail
-  LambdaMIN->DefineParameter(0, "lambda",   5, 0.01, 0, 100);//works
+  //LambdaMIN->DefineParameter(0, "lambda",   5, 0.01, -10, 100);//fail at maxnrun =4, but works with maxnrun >= 9
+  //LambdaMIN->DefineParameter(0, "lambda",   5, 0.01, 0, 100);//works
+  LambdaMIN->DefineParameter(0, "lambda",   5, 0.01, -100, 100);//
   
   int flag = LambdaMIN->Command("MIGRAD");
-  double finalConstraint = UserKF::Constraint();
+  int irun = 1;
+  const int maxnrun=10;//if time permits, the larger the better
   
-  const double EPS = 1e-4;
-  if(flag!=0 || TMath::Abs(finalConstraint) > EPS){
-    printf("LambdaMIN bad fit! %d %e ------- run once more!\n", flag, finalConstraint);
+  while(flag!=0 || ! UserKF::IsConstraintGood()){
+    printf("LambdaMIN bad fit! %d %e ------- run once more! [%d]\n", flag, UserKF::Constraint(), irun++);
     
     flag = LambdaMIN->Command("MIGRAD");
-    finalConstraint = UserKF::Constraint();
-    
-    if(flag!=0 || TMath::Abs(finalConstraint) > EPS){
-      printf("LambdaMIN bad fit! %d %e ------- run once more!\n", flag, finalConstraint);
-      
-      flag = LambdaMIN->Command("MIGRAD");
-      finalConstraint = UserKF::Constraint();
 
-      if(flag!=0 || TMath::Abs(finalConstraint) > EPS){
-        printf("final fit not converge! %d %e exit!\n", flag, finalConstraint); exit(1);
-      }
+    if(irun>=maxnrun){
+      printf("giving up now... %d %f\n", flag, UserKF::Constraint());
+      break;
     }
   }
 
   delete LambdaMIN;
 
   UserKF::Print("DoubleMin after fit");
+
+  return (flag==0 && UserKF::IsConstraintGood());
 }
 
 
