@@ -17,24 +17,16 @@ using namespace std;
 class UserKF{
 
 public:
-  static double GetNpar(){ return fNpar; }
-
-  static void SetPar(const double par[], const int npar=1){
-    fLambda = par[0];
-
-    if(npar==fNpar){
-      fX   = par[1];
-      fY   = par[2];
+  static void SetPar(const double par[], const int npar){
+    if(npar!=fNpar-1){//npar inside TMinuit is only for free par
+      printf("npar mismatch! %d %d\n", npar, fNpar); exit(1);
     }
+    
+    fLambda = par[0];
+    fX      = par[1];
+    fY      = par[2];
   }
 
-  static void SetPar(const TMinuit * mnt){
-    double dummy;
-    mnt->GetParameter(0, fLambda, dummy);
-    mnt->GetParameter(1, fX, dummy);
-    mnt->GetParameter(2, fY, dummy);
-  }
-  
   static double Constraint(){
     return fX*fX + fY*fY -1;
   }
@@ -43,8 +35,8 @@ public:
     return CoreLikelihood() + fLambda * Constraint();
   }
   
-  static void IniCoreMIN(TMinuit * mnt){
-    mnt->DefineParameter(0, "lambda", fLambda, 1e-2, -1e6, 1e6);
+  static void IniCoreMIN(TMinuit * mnt, const double inputl){
+    mnt->DefineParameter(0, "lambda", inputl, 1e-2, -1e6, 1e6);//overwrite lambda from input
     mnt->FixParameter(0);  // Fix Lambda
     
     //user previous fit result as initial values
@@ -56,7 +48,6 @@ public:
     const double eps = 1e-4;
     return (TMath::Abs(Constraint())<eps);
   }
-  
 
   static void Print(const TString tag){
     printf("%20s lambda %10.6e X %10.6e Y %10.6e, core %20.6e constraint %20.6e full %20.6e\n", tag.Data(), fLambda, fX, fY, CoreLikelihood(), Constraint(), FullLikelihood());
@@ -66,7 +57,7 @@ private:
   static double fLambda;
   static double fX;
   static double fY;
-  static int fNpar;
+  static const int fNpar;
   
   static double CoreLikelihood(){
     return fX + fY;
@@ -76,11 +67,11 @@ private:
 double UserKF::fLambda = -999;
 double UserKF::fX = -999;
 double UserKF::fY = -999;
-int UserKF::fNpar = 3;
+const int UserKF::fNpar = 3;
 
 void CoreFCN(int &npars, double *grad, double &value, double *par, int flag)
 {
-  UserKF::SetPar(par, UserKF::GetNpar());
+  UserKF::SetPar(par, npars);
   
   value = UserKF::FullLikelihood();
 }
@@ -88,10 +79,8 @@ void CoreFCN(int &npars, double *grad, double &value, double *par, int flag)
 void LambdaFCN(int &npars, double *grad, double &value, double *par, int flag)
 {
   //parameters and results are passed in this order
-  //par -> UserKF -> CoreMIN -> UserKF -> value
+  //par/UserKF -> CoreMIN -> UserKF -> value
   
-  UserKF::SetPar(par, 1);//only setting lambda
-
   UserKF::Print("\nLambdaFCN before fit");
 
   // Second Minimization
@@ -100,7 +89,7 @@ void LambdaFCN(int &npars, double *grad, double &value, double *par, int flag)
   
   CoreMIN->SetFCN(CoreFCN);
 
-  UserKF::IniCoreMIN(CoreMIN);
+  UserKF::IniCoreMIN(CoreMIN, par[0]);
 
   int flagL = CoreMIN->Command("MIGRAD");
   UserKF::Print("LambdaFCN after fit");
@@ -182,9 +171,10 @@ int main()
   DoubleMin(5, -10, 100);//fail at maxnrun =4, but works with maxnrun >= 9
   DoubleMin(5, 0, 100);
   DoubleMin(5, -100, 100);//works 3 tries
-  DoubleMin(10, -1e6, 1e6);//don't start with 0, no sensitivity, fail eventually: lambda can't be too large
+  DoubleMin(10, -1e6, 1e6);//fail eventually: lambda can't be too large
   DoubleMin(10, -1e3, 1e3);
   DoubleMin(0, -1e3, 1e3);//fail: lambda can't start as 0
+  DoubleMin(1e-2, -1e3, 1e3);//
 
   return 0;
 }
