@@ -8,11 +8,20 @@
 #include "TMatrixD.h"
 #include "TGraph.h"
 #include "TCanvas.h"
+#include "TH1F.h"
+#include "TH2F.h"
+#include "TH1D.h"
+#include "TH2D.h"
+#include "TH3D.h"
+#include "TLegend.h"
+#include "TLegendEntry.h"
+
 #include <iostream>
 #include <random>
 #include <chrono>
 
 using namespace std;
+
 
 class UserKF{
 
@@ -25,14 +34,16 @@ public:
     fLambda = par[0];
     fX      = par[1];
     fY      = par[2];
+    fZ      = par[3];
+
   }
 
   static double Constraint(){
-    return fX*fX + fY*fY -1;
+    return fX + fY + fZ - 29;
   }
 
   static double FullLikelihood(){
-    return CoreLikelihood() + fLambda * Constraint();
+    return CoreLikelihood(E1,E2,E3) + fLambda * Constraint();
   }
   
   static void IniCoreMIN(TMinuit * mnt, const double inputl){
@@ -42,6 +53,7 @@ public:
     //user previous fit result as initial values
     mnt->DefineParameter(1, "x", fX, 1e-2, -1e6, 1e6);
     mnt->DefineParameter(2, "y", fY, 1e-2, -1e6, 1e6);
+    mnt->DefineParameter(3, "z", fZ, 1e-2, -1e6, 1e6);
   }
 
   static bool IsConstraintGood(){
@@ -49,25 +61,114 @@ public:
     return (TMath::Abs(Constraint())<eps);
   }
 
-  static void Print(const TString tag){
-    printf("%20s lambda %10.6e X %10.6e Y %10.6e, core %20.6e constraint %20.6e full %20.6e\n", tag.Data(), fLambda, fX, fY, CoreLikelihood(), Constraint(), FullLikelihood());
+  static TMatrixD CovarianceMatrix(){
+    // Defines the covariance matrix and the variables
+    double V[9];
+    // Set the covariance matrix elements 
+    for(int i=0;i<3;i++) {
+      for(int j=0;j<3;j++) {
+        V[3*i+j]= 10E-5; //off diagonal elements have no co-correlation here but a small number here does no effect the algorithm
+        if(i==j && (i==0)) {V[3*i+j]=TMath::Power(0.5,2.);}
+        if(i==j && (i==1)) {V[3*i+j]=TMath::Power(1,2.);}
+        if(i==j && (i==2)) {V[3*i+j]=TMath::Power(1,2.);}
+      }
+    }
+    // Create the matrix
+    int nparameters = fNpar-1;
+    TMatrixD CovMatrix(nparameters,nparameters);
+    for(int i=0;i<nparameters*nparameters;i++) {
+      int x=floor(i/nparameters);
+      int y=i%nparameters;
+      CovMatrix[x][y]=V[i];
+    }
+    return CovMatrix;
   }
 
+  static void Print(const TString tag){
+    printf("%20s lambda %10.6e X %10.6e Y %10.6e, core %20.6e constraint %20.6e full %20.6e\n", tag.Data(), fLambda, fX, fY, CoreLikelihood(E1,E2,E3), Constraint(), FullLikelihood());
+  }
+  static double GetfX(){
+    return fX;
+  }
+  static double GetfY(){
+    return fY;
+  }
+  static double GetfZ(){
+    return fZ;
+  }
+  static double GetfLambda(){
+    return fLambda;
+  }
+  static void Set(double e1, double e2, double e3){
+    E1 = e1;
+    E2 = e2;
+    E3 = e3;
+  }
 private:
   static double fLambda;
   static double fX;
   static double fY;
+  static double fZ;
   static const int fNpar;
+
+  static double E1;
+  static double E2;
+  static double E3;
+
   
-  static double CoreLikelihood(){
-    return fX + fY;
+  static double CoreLikelihood(double E1, double E2, double E3){
+
+    TMatrixD CovMatrix = CovarianceMatrix();
+    TMatrixD CovMatrixInverse = CovMatrix.Invert();
+
+    int nparameters = fNpar-1;
+
+    TMatrixD Diff(nparameters,1);
+    Diff[0][0]=fX-E1;
+    Diff[1][0]=fY-E2;
+    Diff[2][0]=fZ-E3;
+
+    TMatrixD DiffT(1,nparameters);
+    DiffT.Transpose(Diff);
+
+    TMatrixD Chi2 = (DiffT*CovMatrixInverse*Diff);
+    
+    return Chi2[0][0];
+
   }
 };
 
 double UserKF::fLambda = -999;
 double UserKF::fX = -999;
 double UserKF::fY = -999;
-const int UserKF::fNpar = 3;
+double UserKF::fZ = -999;
+const int UserKF::fNpar = 4;
+
+double UserKF::E1 = -999;
+double UserKF::E2 = -999;
+double UserKF::E3 = -999;
+
+vector<double> IniE(){
+
+  std::default_random_engine engine; 
+  engine.seed(std::chrono::system_clock::now().time_since_epoch().count());
+
+  // Gaussian mean followed by stdiv
+  std::normal_distribution<double> nd1(4*0.8, 0.5); 
+  std::normal_distribution<double> nd2(9*0.8, 1); 
+  std::normal_distribution<double> nd3(16*0.8, 1); 
+  // Generate the intial E's value
+  double E1 = nd1(engine);
+  double E2 = nd2(engine);
+  double E3 = nd3(engine);
+  vector<double> vet;
+  vet.push_back(E1);
+  vet.push_back(E2);
+  vet.push_back(E3);
+  UserKF::Set(E1,E2,E3);
+  return vet;
+
+}
 
 void CoreFCN(int &npars, double *grad, double &value, double *par, int flag)
 {
@@ -81,7 +182,7 @@ void LambdaFCN(int &npars, double *grad, double &value, double *par, int flag)
   //parameters and results are passed in this order
   //par/UserKF -> CoreMIN -> UserKF -> value
   
-  UserKF::Print("\nLambdaFCN before fit");
+  //UserKF::Print("\nLambdaFCN before fit");
 
   // Second Minimization
   TMinuit * CoreMIN = new TMinuit(3);
@@ -92,7 +193,7 @@ void LambdaFCN(int &npars, double *grad, double &value, double *par, int flag)
   UserKF::IniCoreMIN(CoreMIN, par[0]);
 
   int flagL = CoreMIN->Command("MIGRAD");
-  UserKF::Print("LambdaFCN after fit");
+  //UserKF::Print("LambdaFCN after fit");
   
   int irun = 1;
   const int maxnrun = 2;//no need to try many times, fail alwasy if lambda is bad
@@ -100,7 +201,7 @@ void LambdaFCN(int &npars, double *grad, double &value, double *par, int flag)
     printf("CoreMIN bad fit! %d ---- run once more [%d]\n", flagL, irun++); 
 
     flagL = CoreMIN->Command("MIGRAD");
-    UserKF::Print("LambdaFCN after fit");
+    //UserKF::Print("LambdaFCN after fit");
     
     if(irun>=maxnrun){
       break;
@@ -123,7 +224,7 @@ void LambdaFCN(int &npars, double *grad, double &value, double *par, int flag)
 
 bool DoubleMin(const double iniLambda, const double lmin, const double lmax)
 {
-  UserKF::Print("DoubleMin before fit");
+  //UserKF::Print("DoubleMin before fit\n");
 
   TMinuit * LambdaMIN = new TMinuit(1);
   LambdaMIN->SetPrintLevel(-1);
@@ -133,7 +234,7 @@ bool DoubleMin(const double iniLambda, const double lmin, const double lmax)
   LambdaMIN->DefineParameter(0, "lambda", iniLambda, 1e-2, lmin, lmax);
   
   int flag = LambdaMIN->Command("MIGRAD");
-  UserKF::Print("DoubleMin after fit");
+  //UserKF::Print("DoubleMin after fit\n");
   
   int irun = 1;
   const int maxnrun=20;//if time permits, the larger the better  
@@ -141,7 +242,7 @@ bool DoubleMin(const double iniLambda, const double lmin, const double lmax)
     printf("LambdaMIN bad fit! %d %e ------- run once more! [%d]\n", flag, UserKF::Constraint(), irun++);
     
     flag = LambdaMIN->Command("MIGRAD");
-    UserKF::Print("DoubleMin after fit");
+    //UserKF::Print("DoubleMin after fit\n");
     
     if(irun>=maxnrun){
       break;
@@ -152,6 +253,7 @@ bool DoubleMin(const double iniLambda, const double lmin, const double lmax)
 
   if(flag==0 && UserKF::IsConstraintGood()){
     printf("DoubleMin finishes: it works for %f %f %f\n", iniLambda, lmin, lmax);
+    cout << "X: " <<  UserKF::GetfX() << " Y: " <<  UserKF::GetfY() << " Z: " <<  UserKF::GetfZ()<< " lambda: " <<   UserKF::GetfLambda() << endl;
     return true;
   }
   else{
@@ -163,6 +265,48 @@ bool DoubleMin(const double iniLambda, const double lmin, const double lmax)
 
 int main()
 {
+  TH1F *hBefore = new TH1F("hBefore","Energy - Before Fitting",80,0,20);
+  TH1F *hAfter = new TH1F("hAfter","Energy - After Fitting",80,0,20);
+
+  for(int i = 0; i < 1000; i++){
+    vector<double> vet = IniE();
+
+    for(unsigned int i = 0; i < vet.size(); i++){
+      cout << "vet: " << vet[i] << endl;
+    }
+    hBefore->Fill(vet[0]);
+    hBefore->Fill(vet[1]);
+    hBefore->Fill(vet[2]);
+
+    DoubleMin(5, -10, 100);
+
+    cout << "xxX: " <<  UserKF::GetfX() << " Y: " <<  UserKF::GetfY() << " Z: " <<  UserKF::GetfZ()<< " lambda: " <<   UserKF::GetfLambda() << endl;
+    double E1 = UserKF::GetfX();
+    double E2 = UserKF::GetfY();
+    double E3 = UserKF::GetfZ();
+    hAfter->Fill(E1);
+    hAfter->Fill(E2);
+    hAfter->Fill(E3);
+  }
+
+  TCanvas * c1 = new TCanvas("c1", "", 1200, 800);
+  auto legend = new TLegend(0.5,0.7,0.68,0.88);
+  hBefore->SetMaximum(330);
+  //hBefore->SetStats(0);
+  hBefore->SetFillStyle(4050);
+  hBefore->SetFillColor(24);
+  hBefore->SetLineColor(24);
+  hBefore->Draw("hist");
+  hAfter->SetFillStyle(3001);
+  hAfter->SetFillColor(46);
+  hAfter->SetLineColor(46);
+  hAfter->Draw("SAMES hist");
+  legend->AddEntry(hBefore,"Before Fitting","f");
+  legend->AddEntry(hAfter,"After Fitting","f");
+  legend->Draw("same");
+  c1->Print("hEnergyFitting.png");
+
+  /* Other tests
   DoubleMin(0.5, 0, 1000);
   DoubleMin(  5, 0, 100);
   DoubleMin( 10, 0, 100);
@@ -175,6 +319,8 @@ int main()
   DoubleMin(10, -1e3, 1e3);
   DoubleMin(0, -1e3, 1e3);//fail: lambda can't start as 0
   DoubleMin(1e-2, -1e3, 1e3);//
+  */
+
 
   return 0;
 }
