@@ -27,19 +27,20 @@ class UserKF{
 
 public:
   static void SetPar(const double par[], const int npar){
-    if(npar!=fNpar-1){//npar inside TMinuit is only for free par
+    if(npar!=fNpar-2){//npar inside TMinuit is only for free par
       printf("npar mismatch! %d %d\n", npar, fNpar); exit(1);
     }
     
     fLambda = par[0];
     fX      = par[1];
     fY      = par[2];
-    fZ      = par[3];
+    fZ      = E3;//par[3];
 
   }
 
   static double Constraint(){
-    return fX + fY + fZ - 29;
+    //return fX + fY + fZ - 29;
+    return 2*fX*fY*(1-cos(fZ)) - 0.134977*0.134977;
   }
 
   static double FullLikelihood(){
@@ -54,6 +55,7 @@ public:
     mnt->DefineParameter(1, "x", fX, 1e-2, -1e6, 1e6);
     mnt->DefineParameter(2, "y", fY, 1e-2, -1e6, 1e6);
     mnt->DefineParameter(3, "z", fZ, 1e-2, -1e6, 1e6);
+    mnt->FixParameter(3);
   }
 
   static bool IsConstraintGood(){
@@ -96,6 +98,15 @@ public:
   static double GetfZ(){
     return fZ;
   }
+  static double GetE1(){
+    return E1;
+  }
+  static double GetE2(){
+    return E2;
+  }
+  static double GetE3(){
+    return E3;
+  }
   static double GetfLambda(){
     return fLambda;
   }
@@ -103,6 +114,19 @@ public:
     E1 = e1;
     E2 = e2;
     E3 = e3;
+  }
+  static void SetCVM(vector<double> V){
+    int size = V.size();
+    int dim = sqrt(size);
+    //CovMatrix.ResizeTo(dim,dim);
+    for(int i=0;i<size;i++) {
+      int x=floor(i/dim);
+      int y=i%dim;
+      CovMatrix[x][y]=V[i];
+    }
+    CovMatrix[0][2] = 0;
+    CovMatrix[2][0] = 0;
+    CovMatrix[2][2] = 1;
   }
 private:
   static double fLambda;
@@ -114,6 +138,8 @@ private:
   static double E1;
   static double E2;
   static double E3;
+
+  static TMatrixD CovMatrix;
 
   
   static double CoreLikelihood(double E1, double E2, double E3){
@@ -147,6 +173,9 @@ const int UserKF::fNpar = 4;
 double UserKF::E1 = -999;
 double UserKF::E2 = -999;
 double UserKF::E3 = -999;
+TMatrixD tmpMatrix(3,3);
+TMatrixD UserKF::CovMatrix = tmpMatrix;
+
 
 vector<double> IniE(){
 
@@ -222,9 +251,15 @@ void LambdaFCN(int &npars, double *grad, double &value, double *par, int flag)
   delete CoreMIN;
 }
 
-bool DoubleMin(const double iniLambda, const double lmin, const double lmax)
+void SetInitials(double iniE1, double iniE2, double iniOA, vector<double> CVM){
+  UserKF::Set(iniE1,iniE2,iniOA);
+  UserKF::SetCVM(CVM);
+}
+
+bool DoubleMin(const double iniLambda, const double lmin, const double lmax, double iniE1, double iniE2, double iniOA, vector<double> CVM, double &optE1, double &optE2, int &fg)
 {
   //UserKF::Print("DoubleMin before fit\n");
+  SetInitials(iniE1, iniE2, iniOA, CVM);
 
   TMinuit * LambdaMIN = new TMinuit(1);
   LambdaMIN->SetPrintLevel(-1);
@@ -253,18 +288,29 @@ bool DoubleMin(const double iniLambda, const double lmin, const double lmax)
 
   if(flag==0 && UserKF::IsConstraintGood()){
     printf("DoubleMin finishes: it works for %f %f %f\n", iniLambda, lmin, lmax);
+    cout << "E1: " <<  UserKF::GetE1() << " E2: " <<  UserKF::GetE2() << " E3: " <<  UserKF::GetE3()<< endl;
     cout << "X: " <<  UserKF::GetfX() << " Y: " <<  UserKF::GetfY() << " Z: " <<  UserKF::GetfZ()<< " lambda: " <<   UserKF::GetfLambda() << endl;
+    optE1 = UserKF::GetfX();
+    optE2 = UserKF::GetfY();
+    double massPost = sqrt(2*optE1*optE2*(1-cos(UserKF::GetfZ())));
+    cout << "massPost: " << massPost << endl;
+    if(massPost < 0.1) cout << "small mass!!!" << endl;
+    fg = 0;
     return true;
   }
   else{
     printf("DoubleMin finishes: giving up now... %d %f for  %f %f %f\n", flag, UserKF::Constraint(), iniLambda, lmin, lmax);
+    fg = 4;
     return false;
   }
 }
 
 
+
+/*
 int main()
 {
+  
   TH1F *hBefore = new TH1F("hBefore","Energy - Before Fitting",80,0,20);
   TH1F *hAfter = new TH1F("hAfter","Energy - After Fitting",80,0,20);
 
@@ -306,7 +352,7 @@ int main()
   legend->Draw("same");
   c1->Print("hEnergyFitting.png");
 
-  /* Other tests
+  Other tests
   DoubleMin(0.5, 0, 1000);
   DoubleMin(  5, 0, 100);
   DoubleMin( 10, 0, 100);
@@ -321,7 +367,7 @@ int main()
   DoubleMin(1e-2, -1e3, 1e3);//
   */
 
-
-  return 0;
-}
+  
+  //return 0;
+//}
 
