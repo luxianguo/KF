@@ -144,9 +144,9 @@ vector<double> IniE(){
   engine.seed(std::chrono::system_clock::now().time_since_epoch().count());
 
   // Gaussian mean followed by stdiv
-  std::normal_distribution<double> nd1(4*0.8, 0.5); 
-  std::normal_distribution<double> nd2(9*0.8, 1); 
-  std::normal_distribution<double> nd3(16*0.8, 1); 
+  std::normal_distribution<double> nd1(4*1, 0.5); 
+  std::normal_distribution<double> nd2(9*1, 1); 
+  std::normal_distribution<double> nd3(16*1, 1); 
   // Generate the intial E's value
   double iniX = nd1(engine);
   double iniY = nd2(engine);
@@ -255,7 +255,7 @@ bool DoubleMin(const double iniLambda, const double lmin, const double lmax, vec
   //UserKF::Print("DoubleMin after fit\n");
   
   int irun = 1;
-  const int maxnrun=20; //if time permits, the larger the better  
+  const int maxnrun=50; //if time permits, the larger the better  
   while(flag!=0 || ! UserKF::IsConstraintGood()){
     printf("LambdaMIN bad fit! %d %e ------- run once more! [%d]\n", flag, UserKF::Constraint(), irun++);
     
@@ -287,6 +287,9 @@ int main()
   TH1F *hBefore = new TH1F("hBefore","Energy - Before Fitting",80,0,20);
   TH1F *hAfter = new TH1F("hAfter","Energy - After Fitting",80,0,20);
 
+  TH1F *hBefore_Sum = new TH1F("hBefore_Sum","Energy Sum - Before Fitting",80,22,42);
+  TH1F *hAfter_Sum = new TH1F("hAfter_Sum","Energy Sum - After Fitting",80,22,42);
+
   for(int i = 0; i < 1000; i++){
     vector<double> vet = IniE();
     vector<double> CVMvet = GetCVM();
@@ -303,12 +306,14 @@ int main()
       hBefore->Fill(vet[0]);
       hBefore->Fill(vet[1]);
       hBefore->Fill(vet[2]);
+      hBefore_Sum->Fill(vet[0]+vet[1]+vet[2]);
       double finX = UserKF::GetfOptX();
       double finY = UserKF::GetfOptY();
       double finZ = UserKF::GetfOptZ();
       hAfter->Fill(finX);
       hAfter->Fill(finY);
       hAfter->Fill(finZ);
+      hAfter_Sum->Fill(finX+finY+finZ);
     }
     else cout << "This event is not well fitted, discard!" << endl;
   }
@@ -329,6 +334,23 @@ int main()
   legend->AddEntry(hAfter,"After Fitting","f");
   legend->Draw("same");
   c1->Print("hEnergyFitting.png");
+
+  TCanvas * c2 = new TCanvas("c2", "", 1200, 800);
+  auto legend_Sum = new TLegend(0.5,0.7,0.68,0.88);
+  hBefore_Sum->SetMaximum(330);
+  //hBefore_Sum->SetStats(0);
+  hBefore_Sum->SetFillStyle(4050);
+  hBefore_Sum->SetFillColor(24);
+  hBefore_Sum->SetLineColor(24);
+  hBefore_Sum->Draw("hist");
+  hAfter_Sum->SetFillStyle(3001);
+  hAfter_Sum->SetFillColor(46);
+  hAfter_Sum->SetLineColor(46);
+  hAfter_Sum->Draw("SAMES hist");
+  legend_Sum->AddEntry(hBefore_Sum,"Before Fitting","f");
+  legend_Sum->AddEntry(hAfter_Sum,"After Fitting","f");
+  legend_Sum->Draw("same");
+  c2->Print("hSumFitting.png");
 
   return 0;
 }
