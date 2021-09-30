@@ -85,7 +85,7 @@ public:
     for(int i=0;i<size;i++) {
       int x=floor(i/dim);
       int y=i%dim;
-      CovMatrix[x][y]=V[i];
+      fCovMatrix[x][y]=V[i];
     }
   }
 private:
@@ -99,11 +99,11 @@ private:
   static double fY;
   static double fZ;
 
-  static TMatrixD CovMatrix;
+  static TMatrixD fCovMatrix;
 
   static double CoreLikelihood(){
 
-    TMatrixD CovMatrixtmp = CovMatrix;
+    TMatrixD CovMatrixtmp = fCovMatrix;
     // Note Invert() will change the original matrix, need to use a copy
     TMatrixD CovMatrixInverse = CovMatrixtmp.Invert();
 
@@ -135,7 +135,7 @@ double UserKF::fY = -999;
 double UserKF::fZ = -999;
 
 const int npars = UserKF::GetfNpar() - 1; 
-TMatrixD UserKF::CovMatrix(npars,npars);
+TMatrixD UserKF::fCovMatrix(npars,npars);
 
 
 vector<double> IniE(){
