@@ -9,10 +9,8 @@
 #include "TGraph.h"
 #include "TCanvas.h"
 #include "TH1F.h"
-#include "TH2F.h"
 #include "TH1D.h"
-#include "TH2D.h"
-#include "TH3D.h"
+
 #include "TLegend.h"
 #include "TLegendEntry.h"
 
@@ -74,12 +72,12 @@ public:
   
   static double GetfNpar(){return fNpar;}
   
-  static void SetVars(double iniVarX, double iniVarY, double iniVarZ){
+  static void SetVars(const double iniVarX, const double iniVarY, const double iniVarZ){
     fX = iniVarX;
     fY = iniVarY;
     fZ = iniVarZ;
   }
-  static void SetCVM(vector<double> V){
+  static void SetCVM(const vector<double> V){
     int size = V.size();
     int dim = sqrt(size);
     for(int i=0;i<size;i++) {
@@ -144,9 +142,9 @@ vector<double> IniE(){
   engine.seed(std::chrono::system_clock::now().time_since_epoch().count());
 
   // Gaussian mean followed by stdiv
-  std::normal_distribution<double> nd1(4*1, 0.5); 
-  std::normal_distribution<double> nd2(9*1, 1); 
-  std::normal_distribution<double> nd3(16*1, 1); 
+  std::normal_distribution<double> nd1(4*0.7, 0.5); 
+  std::normal_distribution<double> nd2(9*0.7, 1); 
+  std::normal_distribution<double> nd3(16*0.7, 1); 
   // Generate the intial E's value
   double iniX = nd1(engine);
   double iniY = nd2(engine);
@@ -227,7 +225,7 @@ void LambdaFCN(int &npars, double *grad, double &value, double *par, int flag)
   delete CoreMIN;
 }
 
-void SetIniValues(vector<double> iniVar, vector<double> CVM){
+void SetIniValues(const vector<double> iniVar, const vector<double> CVM){
   int VarsSize = iniVar.size();
   int CVMDim = sqrt(CVM.size());
   if(VarsSize != CVMDim) {
