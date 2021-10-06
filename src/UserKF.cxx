@@ -136,15 +136,15 @@ const int npars = UserKF::GetfNpar() - 1;
 TMatrixD UserKF::fCovMatrix(npars,npars);
 
 
-vector<double> IniE(){
+vector<double> IniE(const double &bias, const double &sigma1, const double &sigma2, const double &sigma3){
 
   std::default_random_engine engine; 
   engine.seed(std::chrono::system_clock::now().time_since_epoch().count());
 
   // Gaussian mean followed by stdiv
-  std::normal_distribution<double> nd1(4*0.7, 0.5); 
-  std::normal_distribution<double> nd2(9*0.7, 1); 
-  std::normal_distribution<double> nd3(16*0.7, 1); 
+  std::normal_distribution<double> nd1(4*bias, sigma1); 
+  std::normal_distribution<double> nd2(9*bias, sigma2); 
+  std::normal_distribution<double> nd3(16*bias, sigma3); 
   // Generate the intial E's value
   double iniX = nd1(engine);
   double iniY = nd2(engine);
@@ -157,7 +157,7 @@ vector<double> IniE(){
 
 }
 
-vector<double> GetCVM(){
+vector<double> GetCVM(const double &sigma1, const double &sigma2, const double &sigma3){
   // Defines the covariance matrix and the variables
   double CVM[9];
   vector<double> CVM_Vet;
@@ -165,9 +165,9 @@ vector<double> GetCVM(){
   for(int i=0;i<3;i++) {
     for(int j=0;j<3;j++) {
       CVM[3*i+j]= 10E-5; //off diagonal elements have no co-correlation here but a small number here does no effect the algorithm
-      if(i==j && (i==0)) {CVM[3*i+j]=TMath::Power(0.5,2.);}
-      if(i==j && (i==1)) {CVM[3*i+j]=TMath::Power(1,2.);}
-      if(i==j && (i==2)) {CVM[3*i+j]=TMath::Power(1,2.);}
+      if(i==j && (i==0)) {CVM[3*i+j]=TMath::Power(sigma1,2.);}
+      if(i==j && (i==1)) {CVM[3*i+j]=TMath::Power(sigma2,2.);}
+      if(i==j && (i==2)) {CVM[3*i+j]=TMath::Power(sigma3,2.);}
     }
   }
   for(int i=0;i<9;i++){
@@ -289,8 +289,10 @@ int main()
   TH1F *hAfter_Sum = new TH1F("hAfter_Sum","Energy Sum - After Fitting",80,22,42);
 
   for(int i = 0; i < 1000; i++){
-    vector<double> vet = IniE();
-    vector<double> CVMvet = GetCVM();
+    // Bias, Sigmas
+    vector<double> vet = IniE(0.8,0.5,1,1);
+    // Sigmas
+    vector<double> CVMvet = GetCVM(0.5,1,1);
 
     for(unsigned int i = 0; i < vet.size(); i++){
       cout << "vet: " << vet[i] << endl;
