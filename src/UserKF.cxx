@@ -8,6 +8,8 @@
 #include "TMatrixD.h"
 #include "TGraph.h"
 #include "TCanvas.h"
+#include "TF1.h"
+#include "TF2.h"
 #include "TH1F.h"
 #include "TH1D.h"
 
@@ -55,7 +57,8 @@ public:
   }
 
   static bool IsConstraintGood(){
-    const double eps = 1e-4;
+    // This is a loose constraint, can be set to 1e-4
+    const double eps = 1e-1;
     return (TMath::Abs(Constraint())<eps);
   }
 
@@ -140,7 +143,7 @@ vector<double> IniE(const double &bias, const double &sigma1, const double &sigm
 
   std::default_random_engine engine; 
   engine.seed(std::chrono::system_clock::now().time_since_epoch().count());
-
+  
   // Gaussian mean followed by stdiv
   std::normal_distribution<double> nd1(4*bias, sigma1); 
   std::normal_distribution<double> nd2(9*bias, sigma2); 
@@ -237,7 +240,7 @@ void SetIniValues(const vector<double> iniVar, const vector<double> CVM){
 }
 
 
-bool DoubleMin(const double iniLambda, const double lmin, const double lmax, vector<double> iniVar, vector<double> CVM, int& GoodFit)
+bool DoubleMin(const double iniLambda, const double lmin, const double lmax, vector<double> iniVar, vector<double> CVM)
 {
   //UserKF::Print("DoubleMin before fit\n");
   SetIniValues(iniVar, CVM);
@@ -253,7 +256,7 @@ bool DoubleMin(const double iniLambda, const double lmin, const double lmax, vec
   //UserKF::Print("DoubleMin after fit\n");
   
   int irun = 1;
-  const int maxnrun=50; //if time permits, the larger the better  
+  const int maxnrun=20; //if time permits, the larger the better  
   while(flag!=0 || ! UserKF::IsConstraintGood()){
     printf("LambdaMIN bad fit! %d %e ------- run once more! [%d]\n", flag, UserKF::Constraint(), irun++);
     
@@ -270,7 +273,6 @@ bool DoubleMin(const double iniLambda, const double lmin, const double lmax, vec
   if(flag==0 && UserKF::IsConstraintGood()){
     printf("DoubleMin finishes: it works for %f %f %f\n", iniLambda, lmin, lmax);
     //cout << "X: " <<  UserKF::GetfOptX() << " Y: " <<  UserKF::GetfOptY() << " Z: " <<  UserKF::GetfOptZ()<< " lambda: " <<   UserKF::GetfLambda() << endl;
-    GoodFit = 0;
     return true;
   }
   else{
@@ -282,26 +284,33 @@ bool DoubleMin(const double iniLambda, const double lmin, const double lmax, vec
 
 int main()
 {
-  TH1F *hBefore = new TH1F("hBefore","Energy - Before Fitting",80,0,20);
+  TH1F *hBefore = new TH1F("hBefore","Energy - Before and After Fitting",80,0,20);
   TH1F *hAfter = new TH1F("hAfter","Energy - After Fitting",80,0,20);
 
   TH1F *hBefore_Sum = new TH1F("hBefore_Sum","Energy Sum - Before Fitting",80,22,42);
   TH1F *hAfter_Sum = new TH1F("hAfter_Sum","Energy Sum - After Fitting",80,22,42);
 
-  for(int i = 0; i < 1000; i++){
+  double FailEvt = 0;
+
+  int ientries = 1000;
+
+  for(int i = 0; i < ientries; i++){
     // Bias, Sigmas
-    vector<double> vet = IniE(0.8,0.5,1,1);
-    // Sigmas
-    vector<double> CVMvet = GetCVM(0.5,1,1);
+    double Bias = 0.7;
+    double Sigma1 = 0.5;
+    double Sigma2 = 1;
+    double Sigma3 = 1;
+
+    vector<double> vet = IniE(Bias,Sigma1,Sigma2,Sigma3);
+    vector<double> CVMvet = GetCVM(Sigma1,Sigma2,Sigma3);
 
     for(unsigned int i = 0; i < vet.size(); i++){
       cout << "vet: " << vet[i] << endl;
     }
-    int GoodFit = -999;
 
-    DoubleMin(5, -10, 100, vet, CVMvet, GoodFit);
+    bool GoodFit = DoubleMin(5, -10, 100, vet, CVMvet);
 
-    if(GoodFit != -999){
+    if(GoodFit){
       // Fill histograms for good fit
       hBefore->Fill(vet[0]);
       hBefore->Fill(vet[1]);
@@ -315,13 +324,19 @@ int main()
       hAfter->Fill(finZ);
       hAfter_Sum->Fill(finX+finY+finZ);
     }
-    else cout << "This event is not well fitted, discard!" << endl;
+    else {
+      cout << "This event is not well fitted, discard!" << endl;
+      FailEvt++;
+    }
   }
 
+
+  cout << "FailEvt: " << FailEvt << endl;
+
   TCanvas * c1 = new TCanvas("c1", "", 1200, 800);
-  auto legend = new TLegend(0.5,0.7,0.68,0.88);
+  auto legend = new TLegend(0.7,0.7,0.88,0.88);
   hBefore->SetMaximum(330);
-  //hBefore->SetStats(0);
+  hBefore->SetStats(0);
   hBefore->SetFillStyle(4050);
   hBefore->SetFillColor(24);
   hBefore->SetLineColor(24);
@@ -330,15 +345,49 @@ int main()
   hAfter->SetFillColor(46);
   hAfter->SetLineColor(46);
   hAfter->Draw("SAMES hist");
+  hAfter->SetStats(0);
+  TF1 *f1 = new TF1(Form("f1%d",1),"gaus",2,6);
+  f1->SetParameters(200, 4, 0.5);
+  f1->SetLineColor(kBlue);
+  TF1 *f2 = new TF1(Form("f1%d",2),"gaus",6,13);
+  f2->SetParameters(200, 4, 0.5);
+  f2->SetLineColor(kBlue);
+  TF1 *f3 = new TF1(Form("f1%d",3),"gaus",13,20);
+  f3->SetParameters(200, 4, 0.5);
+  f3->SetLineColor(kBlue);
+
+  hAfter->Fit(Form("f1%d",1),"","",2,6);
+  f1->Draw("same");
+  
+  hAfter->Fit(Form("f1%d",2),"","",6,13);
+  f2->Draw("same");
+
+  hAfter->Fit(Form("f1%d",3),"","",13,20);
+  f3->Draw("same");
+
+  Double_t par1[3];
+  Double_t par2[3];
+  Double_t par3[3];
+  
+  // writes the fit results into the par array
+  f1->GetParameters(par1);
+  f2->GetParameters(par2);
+  f3->GetParameters(par3);
+  cout << "f1 mean: " << par1[1] << " sigma: " << par1[2] << endl;
+  cout << "f2 mean: " << par2[1] << " sigma: " << par2[2] << endl;
+  cout << "f3 mean: " << par3[1] << " sigma: " << par3[2] << endl;
+
   legend->AddEntry(hBefore,"Before Fitting","f");
   legend->AddEntry(hAfter,"After Fitting","f");
+  legend->AddEntry(f1,"After Fitting Gaus Fit","l");
   legend->Draw("same");
+
   c1->Print("hEnergyFitting.png");
 
   TCanvas * c2 = new TCanvas("c2", "", 1200, 800);
   auto legend_Sum = new TLegend(0.5,0.7,0.68,0.88);
   hBefore_Sum->SetMaximum(330);
-  //hBefore_Sum->SetStats(0);
+  hBefore_Sum->SetStats(0);
   hBefore_Sum->SetFillStyle(4050);
   hBefore_Sum->SetFillColor(24);
   hBefore_Sum->SetLineColor(24);
