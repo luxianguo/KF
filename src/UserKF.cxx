@@ -39,7 +39,8 @@ public:
   }
 
   static double Constraint(){
-    return fOptX + fOptY + fOptZ - 29;
+    //return fOptX + fOptY + fOptZ - 29;
+    return 2*fOptX*fOptY*(1-cos(fOptZ)) - 0.134977*0.134977;
   }
 
   static double FullLikelihood(){
@@ -53,7 +54,8 @@ public:
     //user previous fit result as initial values
     mnt->DefineParameter(1, "x", fOptX, 1e-2, -1e6, 1e6);
     mnt->DefineParameter(2, "y", fOptY, 1e-2, -1e6, 1e6);
-    mnt->DefineParameter(3, "z", fOptZ, 1e-2, -1e6, 1e6);
+    mnt->DefineParameter(3, "z", fZ, 1e-2, -1e6, 1e6);
+    //mnt->FixParameter(3);
   }
 
   static bool IsConstraintGood(){
@@ -256,7 +258,7 @@ bool DoubleMin(const double iniLambda, const double lmin, const double lmax, vec
   //UserKF::Print("DoubleMin after fit\n");
   
   int irun = 1;
-  const int maxnrun=20; //if time permits, the larger the better  
+  const int maxnrun=500; //if time permits, the larger the better  
   while(flag!=0 || ! UserKF::IsConstraintGood()){
     printf("LambdaMIN bad fit! %d %e ------- run once more! [%d]\n", flag, UserKF::Constraint(), irun++);
     
@@ -271,17 +273,46 @@ bool DoubleMin(const double iniLambda, const double lmin, const double lmax, vec
   delete LambdaMIN;
 
   if(flag==0 && UserKF::IsConstraintGood()){
-    printf("DoubleMin finishes: it works for %f %f %f\n", iniLambda, lmin, lmax);
+    printf("DoubleMin finishes: it works for %f %f %f\n", UserKF::GetfLambda(), lmin, lmax);
     //cout << "X: " <<  UserKF::GetfOptX() << " Y: " <<  UserKF::GetfOptY() << " Z: " <<  UserKF::GetfOptZ()<< " lambda: " <<   UserKF::GetfLambda() << endl;
     return true;
   }
   else{
-    printf("DoubleMin finishes: giving up now... %d %f for  %f %f %f\n", flag, UserKF::Constraint(), iniLambda, lmin, lmax);
+    printf("DoubleMin finishes: giving up now... %d %f for  %f %f %f\n", flag, UserKF::Constraint(), UserKF::GetfLambda(), lmin, lmax);
     return false;
   }
 }
 
+vector<double> DoKF(const double &LdShowerEnergyTruth, const double &SlShowerEnergyTruth, const double &OpenAngleTruth, 
+          const double &LdShowerEnergyRaw, const double &SlShowerEnergyRaw, const double &OpenAngle,
+          vector<double> CVM_Dir, vector<double> CVM_Bin)
+{
+  // Declare variables holder
+  vector<double> IniVars;
+  vector<double> FittedVars;
+  IniVars.push_back(LdShowerEnergyRaw);
+  IniVars.push_back(SlShowerEnergyRaw);
+  IniVars.push_back(OpenAngle); // in radians
+  bool GoodFit = DoubleMin(5, -100, 100, IniVars, CVM_Dir);
+  // Check if good fit
+  if(GoodFit){
+    // Save the fitted variables
+    FittedVars.push_back(UserKF::GetfOptX());
+    FittedVars.push_back(UserKF::GetfOptY());
+    FittedVars.push_back(UserKF::GetfOptZ());
+  }
+  else {
+    cout << "This event is not well fitted, discard!" << endl;
+  }
 
+  // Clean the vector
+  IniVars.clear();
+
+  return FittedVars; 
+}
+
+/*
+// Only for toy example
 int main()
 {
   TH1F *hBefore = new TH1F("hBefore","Energy - Before and After Fitting",80,0,20);
@@ -404,3 +435,4 @@ int main()
   return 0;
 }
 
+*/
