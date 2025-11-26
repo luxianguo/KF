@@ -1,6 +1,4 @@
-which mkexe.sh
-
-mkexe.sh UserKF
+./mkexe.sh UserKF
 
 ./UserKF > see.log
 
